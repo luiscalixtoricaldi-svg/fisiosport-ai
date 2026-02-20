@@ -1,5 +1,5 @@
 streamlit==1.32.0
-mediapipe==0.10.9
+numpy==1.23.5
 opencv-python-headless==4.8.1.78
-numpy==1.26.4
-pandas==2.2.1
+mediapipe==0.10.9
+pandas==1.5.3
