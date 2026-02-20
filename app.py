@@ -150,11 +150,11 @@ if st.session_state.usuario_id is None:
         st.subheader("Registro Profesional")
         email = st.text_input("Email")
         password = st.text_input("Password", type="password")
-        if st.button("Registrar"):
+       if st.button("Registrar"):
     resultado = registrar_usuario(email, password)
-    if resultado:
+            if resultado:
         st.success("Usuario registrado correctamente")
-    else:
+         else:
         st.error("Este email ya está registrado")
     elif menu == "Login":
         st.subheader("Ingreso Profesional")
