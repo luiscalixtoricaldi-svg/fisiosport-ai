@@ -57,12 +57,18 @@ def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 def registrar_usuario(email, password):
-    conn = crear_conexion()
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO usuarios (email, password) VALUES (?, ?)",
-                   (email, hash_password(password)))
-    conn.commit()
-    conn.close()
+    try:
+        conn = crear_conexion()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO usuarios (email, password) VALUES (?, ?)",
+            (email, hash_password(password))
+        )
+        conn.commit()
+        conn.close()
+        return True
+    except sqlite3.IntegrityError:
+        return False
 
 def login_usuario(email, password):
     conn = crear_conexion()
@@ -145,9 +151,11 @@ if st.session_state.usuario_id is None:
         email = st.text_input("Email")
         password = st.text_input("Password", type="password")
         if st.button("Registrar"):
-            registrar_usuario(email, password)
-            st.success("Usuario registrado")
-
+    resultado = registrar_usuario(email, password)
+    if resultado:
+        st.success("Usuario registrado correctamente")
+    else:
+        st.error("Este email ya está registrado")
     elif menu == "Login":
         st.subheader("Ingreso Profesional")
         email = st.text_input("Email")
