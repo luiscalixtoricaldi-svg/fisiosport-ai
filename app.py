@@ -10,7 +10,7 @@ from PIL import Image
 st.set_page_config(page_title="FisioSport AI ULTRA", layout="wide")
 
 # ==========================
-# BASE DE DATOS MULTIUSUARIO
+# BASE DE DATOS
 # ==========================
 conn = sqlite3.connect("fisiosport.db", check_same_thread=False)
 cursor = conn.cursor()
@@ -53,16 +53,20 @@ def hash_password(password):
 
 def registrar_usuario(email, password):
     try:
-        cursor.execute("INSERT INTO usuarios (email, password) VALUES (?, ?)",
-                       (email, hash_password(password)))
+        cursor.execute(
+            "INSERT INTO usuarios (email, password) VALUES (?, ?)",
+            (email, hash_password(password))
+        )
         conn.commit()
         return True
     except:
         return False
 
 def login_usuario(email, password):
-    cursor.execute("SELECT * FROM usuarios WHERE email=? AND password=?",
-                   (email, hash_password(password)))
+    cursor.execute(
+        "SELECT * FROM usuarios WHERE email=? AND password=?",
+        (email, hash_password(password))
+    )
     return cursor.fetchone()
 
 # ==========================
@@ -84,7 +88,7 @@ def predecir_rom_futuro(sesiones):
     return round(prediction, 2)
 
 # ==========================
-# ROM MANUAL
+# CÁLCULO ROM
 # ==========================
 def calcular_angulo(a, b, c):
     a, b, c = np.array(a), np.array(b), np.array(c)
@@ -116,7 +120,7 @@ if st.session_state.usuario is None:
 
     if opcion == "Registrar" and st.button("Registrar"):
         if registrar_usuario(email, password):
-            st.success("Registrado")
+            st.success("Registrado correctamente")
         else:
             st.error("Correo ya existe")
 
@@ -134,6 +138,9 @@ if st.session_state.usuario is None:
 # ==========================
 else:
 
+    if st.session_state.usuario_id is None:
+        st.stop()
+
     menu = st.sidebar.radio("Menú", [
         "Dashboard",
         "Nuevo Paciente",
@@ -142,86 +149,115 @@ else:
         "Cámara / Imagen"
     ])
 
-    # DASHBOARD
+    # ================= DASHBOARD =================
     if menu == "Dashboard":
+
         df = pd.read_sql_query(
-            f"SELECT * FROM pacientes WHERE usuario_id={st.session_state.usuario_id}",
-            conn
+            "SELECT * FROM pacientes WHERE usuario_id=?",
+            conn,
+            params=(st.session_state.usuario_id,)
         )
+
         st.metric("Pacientes Totales", len(df))
 
-    # NUEVO PACIENTE
+        if not df.empty:
+            st.bar_chart(df["lesion"].value_counts())
+
+    # ================= NUEVO PACIENTE =================
     if menu == "Nuevo Paciente":
+
         nombre = st.text_input("Nombre")
         lesion = st.selectbox("Lesión", ["Rodilla", "Hombro"])
         fase = st.selectbox("Fase", ["Aguda", "Subaguda", "Crónica"])
 
         if st.button("Guardar"):
             fecha = datetime.now().strftime("%Y-%m-%d")
+
             cursor.execute(
                 "INSERT INTO pacientes (usuario_id, nombre, lesion, fase, fecha) VALUES (?, ?, ?, ?, ?)",
                 (st.session_state.usuario_id, nombre, lesion, fase, fecha)
             )
             conn.commit()
-            st.success("Paciente creado")
 
-    # SESIÓN ROM
+            st.success("Paciente creado correctamente")
+
+    # ================= SESIÓN ROM =================
     if menu == "Sesión ROM":
+
         pacientes = pd.read_sql_query(
-            f"SELECT * FROM pacientes WHERE usuario_id={st.session_state.usuario_id}",
-            conn
+            "SELECT * FROM pacientes WHERE usuario_id=?",
+            conn,
+            params=(st.session_state.usuario_id,)
         )
 
         if not pacientes.empty:
+
             nombre = st.selectbox("Paciente", pacientes["nombre"])
             rom = st.number_input("ROM medido (°)", 0.0, 180.0)
 
             if st.button("Registrar ROM"):
-                paciente_id = pacientes[pacientes["nombre"]==nombre]["id"].values[0]
+
+                paciente_id = pacientes[pacientes["nombre"] == nombre]["id"].values[0]
                 fecha = datetime.now().strftime("%Y-%m-%d")
+
                 cursor.execute(
                     "INSERT INTO sesiones (paciente_id, rom, fecha) VALUES (?, ?, ?)",
                     (paciente_id, rom, fecha)
                 )
                 conn.commit()
-                st.success("Sesión guardada")
 
-    # HISTORIAL + ML
+                st.success("Sesión registrada")
+
+        else:
+            st.info("No tienes pacientes registrados")
+
+    # ================= HISTORIAL + ML =================
     if menu == "Historial + ML":
+
         pacientes = pd.read_sql_query(
-            f"SELECT * FROM pacientes WHERE usuario_id={st.session_state.usuario_id}",
-            conn
+            "SELECT * FROM pacientes WHERE usuario_id=?",
+            conn,
+            params=(st.session_state.usuario_id,)
         )
 
         if not pacientes.empty:
+
             nombre = st.selectbox("Paciente", pacientes["nombre"])
-            paciente_id = pacientes[pacientes["nombre"]==nombre]["id"].values[0]
+            paciente_id = pacientes[pacientes["nombre"] == nombre]["id"].values[0]
 
             sesiones = pd.read_sql_query(
-                f"SELECT * FROM sesiones WHERE paciente_id={paciente_id}",
-                conn
+                "SELECT * FROM sesiones WHERE paciente_id=?",
+                conn,
+                params=(paciente_id,)
             )
 
             if not sesiones.empty:
+
                 st.line_chart(sesiones["rom"])
+
+                promedio = sesiones["rom"].mean()
+                st.metric("ROM promedio", round(promedio, 2))
 
                 prediccion = predecir_rom_futuro(sesiones)
                 if prediccion:
                     st.success(f"Predicción próxima sesión: {prediccion}°")
+
             else:
-                st.info("Sin sesiones registradas")
+                st.info("Este paciente no tiene sesiones")
 
-    # CÁMARA / IMAGEN
+        else:
+            st.info("No tienes pacientes registrados")
+
+    # ================= CÁMARA / IMAGEN =================
     if menu == "Cámara / Imagen":
-        st.header("Medición manual desde imagen")
 
-        uploaded = st.file_uploader("Subir imagen", type=["jpg","png"])
+        uploaded = st.file_uploader("Subir imagen", type=["jpg", "png"])
 
         if uploaded:
             img = Image.open(uploaded)
-            st.image(img, use_column_width=True)
+            st.image(img, use_container_width=True)
 
-            st.info("Ingrese manualmente 3 puntos para cálculo de ángulo")
+            st.info("Ingrese manualmente 3 puntos para calcular el ángulo")
 
             ax = st.number_input("Ax")
             ay = st.number_input("Ay")
@@ -231,9 +267,10 @@ else:
             cy = st.number_input("Cy")
 
             if st.button("Calcular Ángulo"):
-                angulo = calcular_angulo((ax,ay),(bx,by),(cx,cy))
-                st.success(f"Ángulo: {angulo}°")
+                angulo = calcular_angulo((ax, ay), (bx, by), (cx, cy))
+                st.success(f"Ángulo calculado: {angulo}°")
 
+    # ================= LOGOUT =================
     if st.sidebar.button("Cerrar sesión"):
         st.session_state.usuario = None
         st.session_state.usuario_id = None
