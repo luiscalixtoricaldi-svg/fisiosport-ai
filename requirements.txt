@@ -1,7 +1,5 @@
 streamlit
-pandas
+mediapipe
+opencv-python-headless
 numpy
-scikit-learn
-reportlab
-bcrypt
-supabase
+pandas
