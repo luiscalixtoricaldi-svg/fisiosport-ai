@@ -3,15 +3,15 @@ import sqlite3
 import hashlib
 import numpy as np
 import pandas as pd
+from datetime import datetime
+from sklearn.linear_model import LinearRegression
+from PIL import Image
 
-# ==============================
-# CONFIGURACIÓN
-# ==============================
-st.set_page_config(page_title="FisioSport AI", layout="wide")
+st.set_page_config(page_title="FisioSport AI ULTRA", layout="wide")
 
-# ==============================
-# BASE DE DATOS
-# ==============================
+# ==========================
+# BASE DE DATOS MULTIUSUARIO
+# ==========================
 conn = sqlite3.connect("fisiosport.db", check_same_thread=False)
 cursor = conn.cursor()
 
@@ -26,194 +26,215 @@ CREATE TABLE IF NOT EXISTS usuarios (
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS pacientes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    usuario_id INTEGER,
     nombre TEXT,
     lesion TEXT,
-    fase TEXT
+    fase TEXT,
+    fecha TEXT
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS sesiones (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    paciente_id INTEGER,
+    rom REAL,
+    fecha TEXT
 )
 """)
 
 conn.commit()
 
-# ==============================
-# FUNCIONES SEGURIDAD
-# ==============================
+# ==========================
+# SEGURIDAD
+# ==========================
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 def registrar_usuario(email, password):
     try:
-        cursor.execute(
-            "INSERT INTO usuarios (email, password) VALUES (?, ?)",
-            (email, hash_password(password))
-        )
+        cursor.execute("INSERT INTO usuarios (email, password) VALUES (?, ?)",
+                       (email, hash_password(password)))
         conn.commit()
         return True
     except:
         return False
 
 def login_usuario(email, password):
-    cursor.execute(
-        "SELECT * FROM usuarios WHERE email=? AND password=?",
-        (email, hash_password(password))
-    )
+    cursor.execute("SELECT * FROM usuarios WHERE email=? AND password=?",
+                   (email, hash_password(password)))
     return cursor.fetchone()
 
-# ==============================
-# MOTOR RECOMENDACIÓN
-# ==============================
-def recomendar_ejercicio(lesion, fase):
+# ==========================
+# MACHINE LEARNING
+# ==========================
+def predecir_rom_futuro(sesiones):
+    if len(sesiones) < 2:
+        return None
 
-    protocolos = {
-        "Rodilla": {
-            "Aguda": [
-                "Isométricos de cuádriceps",
-                "Elevación pierna recta",
-                "Crioterapia post ejercicio"
-            ],
-            "Subaguda": [
-                "Sentadilla parcial 0-45°",
-                "Step-up bajo",
-                "Propiocepción bipodal"
-            ]
-        },
-        "Hombro": {
-            "Aguda": [
-                "Péndulo de Codman",
-                "Isométricos manguito rotador"
-            ],
-            "Subaguda": [
-                "Rotaciones externas con banda",
-                "Elevaciones frontales 0-90°"
-            ]
-        }
-    }
+    X = np.arange(len(sesiones)).reshape(-1, 1)
+    y = sesiones["rom"].values
 
-    return protocolos.get(lesion, {}).get(fase, ["Plan personalizado"])
+    model = LinearRegression()
+    model.fit(X, y)
 
-# ==============================
-# CÁLCULO ÁNGULO SEGURO
-# ==============================
+    next_index = np.array([[len(sesiones)]])
+    prediction = model.predict(next_index)[0]
+
+    return round(prediction, 2)
+
+# ==========================
+# ROM MANUAL
+# ==========================
 def calcular_angulo(a, b, c):
-
-    a = np.array(a)
-    b = np.array(b)
-    c = np.array(c)
-
-    ba = a - b
-    bc = c - b
-
-    if np.linalg.norm(ba) == 0 or np.linalg.norm(bc) == 0:
-        return "Error: puntos inválidos"
-
-    cos_angle = np.dot(ba, bc) / (np.linalg.norm(ba) * np.linalg.norm(bc))
+    a, b, c = np.array(a), np.array(b), np.array(c)
+    ba, bc = a-b, c-b
+    norma = np.linalg.norm(ba) * np.linalg.norm(bc)
+    if norma == 0:
+        return 0
+    cos_angle = np.dot(ba, bc) / norma
     cos_angle = np.clip(cos_angle, -1.0, 1.0)
+    return round(np.degrees(np.arccos(cos_angle)), 2)
 
-    angle = np.degrees(np.arccos(cos_angle))
-    return round(angle, 2)
-
-# ==============================
-# LOGIN
-# ==============================
+# ==========================
+# SESIÓN
+# ==========================
 if "usuario" not in st.session_state:
     st.session_state.usuario = None
+    st.session_state.usuario_id = None
 
+# ==========================
+# LOGIN
+# ==========================
 if st.session_state.usuario is None:
 
-    st.title("🔐 FisioSport AI")
+    st.title("FisioSport AI ULTRA")
 
-    opcion = st.radio("Selecciona opción", ["Login", "Registrar"])
+    opcion = st.radio("Opción", ["Login", "Registrar"])
     email = st.text_input("Email")
     password = st.text_input("Password", type="password")
 
-    if opcion == "Registrar":
-        if st.button("Registrar"):
-            if registrar_usuario(email, password):
-                st.success("Usuario registrado")
-            else:
-                st.error("Usuario ya existe")
+    if opcion == "Registrar" and st.button("Registrar"):
+        if registrar_usuario(email, password):
+            st.success("Registrado")
+        else:
+            st.error("Correo ya existe")
 
-    if opcion == "Login":
-        if st.button("Ingresar"):
-            if login_usuario(email, password):
-                st.session_state.usuario = email
-                st.success("Bienvenido")
-                st.rerun()
-            else:
-                st.error("Credenciales incorrectas")
+    if opcion == "Login" and st.button("Ingresar"):
+        user = login_usuario(email, password)
+        if user:
+            st.session_state.usuario = email
+            st.session_state.usuario_id = user[0]
+            st.rerun()
+        else:
+            st.error("Credenciales incorrectas")
 
+# ==========================
+# APP PRINCIPAL
+# ==========================
 else:
 
-    st.sidebar.title("FisioSport AI")
     menu = st.sidebar.radio("Menú", [
-        "Registro Paciente",
-        "Recomendación",
-        "Cálculo Ángulo",
-        "Base de Datos"
+        "Dashboard",
+        "Nuevo Paciente",
+        "Sesión ROM",
+        "Historial + ML",
+        "Cámara / Imagen"
     ])
 
-    # ==============================
-    # REGISTRO PACIENTE
-    # ==============================
-    if menu == "Registro Paciente":
+    # DASHBOARD
+    if menu == "Dashboard":
+        df = pd.read_sql_query(
+            f"SELECT * FROM pacientes WHERE usuario_id={st.session_state.usuario_id}",
+            conn
+        )
+        st.metric("Pacientes Totales", len(df))
 
-        st.header("Registro Paciente")
-
+    # NUEVO PACIENTE
+    if menu == "Nuevo Paciente":
         nombre = st.text_input("Nombre")
         lesion = st.selectbox("Lesión", ["Rodilla", "Hombro"])
-        fase = st.selectbox("Fase", ["Aguda", "Subaguda"])
+        fase = st.selectbox("Fase", ["Aguda", "Subaguda", "Crónica"])
 
         if st.button("Guardar"):
+            fecha = datetime.now().strftime("%Y-%m-%d")
             cursor.execute(
-                "INSERT INTO pacientes (nombre, lesion, fase) VALUES (?, ?, ?)",
-                (nombre, lesion, fase)
+                "INSERT INTO pacientes (usuario_id, nombre, lesion, fase, fecha) VALUES (?, ?, ?, ?, ?)",
+                (st.session_state.usuario_id, nombre, lesion, fase, fecha)
             )
             conn.commit()
-            st.success("Paciente registrado")
+            st.success("Paciente creado")
 
-    # ==============================
-    # RECOMENDACIÓN
-    # ==============================
-    if menu == "Recomendación":
+    # SESIÓN ROM
+    if menu == "Sesión ROM":
+        pacientes = pd.read_sql_query(
+            f"SELECT * FROM pacientes WHERE usuario_id={st.session_state.usuario_id}",
+            conn
+        )
 
-        st.header("Recomendación de Ejercicios")
+        if not pacientes.empty:
+            nombre = st.selectbox("Paciente", pacientes["nombre"])
+            rom = st.number_input("ROM medido (°)", 0.0, 180.0)
 
-        lesion = st.selectbox("Lesión", ["Rodilla", "Hombro"])
-        fase = st.selectbox("Fase", ["Aguda", "Subaguda"])
+            if st.button("Registrar ROM"):
+                paciente_id = pacientes[pacientes["nombre"]==nombre]["id"].values[0]
+                fecha = datetime.now().strftime("%Y-%m-%d")
+                cursor.execute(
+                    "INSERT INTO sesiones (paciente_id, rom, fecha) VALUES (?, ?, ?)",
+                    (paciente_id, rom, fecha)
+                )
+                conn.commit()
+                st.success("Sesión guardada")
 
-        if st.button("Generar"):
-            ejercicios = recomendar_ejercicio(lesion, fase)
-            for e in ejercicios:
-                st.success(e)
+    # HISTORIAL + ML
+    if menu == "Historial + ML":
+        pacientes = pd.read_sql_query(
+            f"SELECT * FROM pacientes WHERE usuario_id={st.session_state.usuario_id}",
+            conn
+        )
 
-    # ==============================
-    # CÁLCULO ÁNGULO
-    # ==============================
-    if menu == "Cálculo Ángulo":
+        if not pacientes.empty:
+            nombre = st.selectbox("Paciente", pacientes["nombre"])
+            paciente_id = pacientes[pacientes["nombre"]==nombre]["id"].values[0]
 
-        st.header("Cálculo Manual de Ángulo Articular")
+            sesiones = pd.read_sql_query(
+                f"SELECT * FROM sesiones WHERE paciente_id={paciente_id}",
+                conn
+            )
 
-        ax = st.number_input("Punto A - X")
-        ay = st.number_input("Punto A - Y")
+            if not sesiones.empty:
+                st.line_chart(sesiones["rom"])
 
-        bx = st.number_input("Punto B - X")
-        by = st.number_input("Punto B - Y")
+                prediccion = predecir_rom_futuro(sesiones)
+                if prediccion:
+                    st.success(f"Predicción próxima sesión: {prediccion}°")
+            else:
+                st.info("Sin sesiones registradas")
 
-        cx = st.number_input("Punto C - X")
-        cy = st.number_input("Punto C - Y")
+    # CÁMARA / IMAGEN
+    if menu == "Cámara / Imagen":
+        st.header("Medición manual desde imagen")
 
-        if st.button("Calcular"):
-            angulo = calcular_angulo((ax, ay), (bx, by), (cx, cy))
-            st.success(f"Ángulo calculado: {angulo}°")
+        uploaded = st.file_uploader("Subir imagen", type=["jpg","png"])
 
-    # ==============================
-    # BASE DE DATOS
-    # ==============================
-    if menu == "Base de Datos":
+        if uploaded:
+            img = Image.open(uploaded)
+            st.image(img, use_column_width=True)
 
-        st.header("Pacientes Registrados")
-        df = pd.read_sql_query("SELECT * FROM pacientes", conn)
-        st.dataframe(df)
+            st.info("Ingrese manualmente 3 puntos para cálculo de ángulo")
+
+            ax = st.number_input("Ax")
+            ay = st.number_input("Ay")
+            bx = st.number_input("Bx")
+            by = st.number_input("By")
+            cx = st.number_input("Cx")
+            cy = st.number_input("Cy")
+
+            if st.button("Calcular Ángulo"):
+                angulo = calcular_angulo((ax,ay),(bx,by),(cx,cy))
+                st.success(f"Ángulo: {angulo}°")
 
     if st.sidebar.button("Cerrar sesión"):
         st.session_state.usuario = None
+        st.session_state.usuario_id = None
         st.rerun()
