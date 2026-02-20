@@ -1,4 +1,7 @@
 streamlit
-reportlab
 pandas
+numpy
 scikit-learn
+reportlab
+bcrypt
+supabase
