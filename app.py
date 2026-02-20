@@ -46,3 +46,174 @@ def registrar_usuario(email, password):
             "INSERT INTO usuarios (email, password) VALUES (?, ?)",
             (email, hash_password(password))
         )
+        conn.commit()
+        return True
+    except:
+        return False
+
+def login_usuario(email, password):
+    cursor.execute(
+        "SELECT * FROM usuarios WHERE email=? AND password=?",
+        (email, hash_password(password))
+    )
+    return cursor.fetchone()
+
+# ==============================
+# MOTOR RECOMENDACIÓN
+# ==============================
+def recomendar_ejercicio(lesion, fase):
+
+    protocolos = {
+        "Rodilla": {
+            "Aguda": [
+                "Isométricos de cuádriceps",
+                "Elevación pierna recta",
+                "Crioterapia post ejercicio"
+            ],
+            "Subaguda": [
+                "Sentadilla parcial 0-45°",
+                "Step-up bajo",
+                "Propiocepción bipodal"
+            ]
+        },
+        "Hombro": {
+            "Aguda": [
+                "Péndulo de Codman",
+                "Isométricos manguito rotador"
+            ],
+            "Subaguda": [
+                "Rotaciones externas con banda",
+                "Elevaciones frontales 0-90°"
+            ]
+        }
+    }
+
+    return protocolos.get(lesion, {}).get(fase, ["Plan personalizado"])
+
+# ==============================
+# CÁLCULO ÁNGULO SEGURO
+# ==============================
+def calcular_angulo(a, b, c):
+
+    a = np.array(a)
+    b = np.array(b)
+    c = np.array(c)
+
+    ba = a - b
+    bc = c - b
+
+    if np.linalg.norm(ba) == 0 or np.linalg.norm(bc) == 0:
+        return "Error: puntos inválidos"
+
+    cos_angle = np.dot(ba, bc) / (np.linalg.norm(ba) * np.linalg.norm(bc))
+    cos_angle = np.clip(cos_angle, -1.0, 1.0)
+
+    angle = np.degrees(np.arccos(cos_angle))
+    return round(angle, 2)
+
+# ==============================
+# LOGIN
+# ==============================
+if "usuario" not in st.session_state:
+    st.session_state.usuario = None
+
+if st.session_state.usuario is None:
+
+    st.title("🔐 FisioSport AI")
+
+    opcion = st.radio("Selecciona opción", ["Login", "Registrar"])
+    email = st.text_input("Email")
+    password = st.text_input("Password", type="password")
+
+    if opcion == "Registrar":
+        if st.button("Registrar"):
+            if registrar_usuario(email, password):
+                st.success("Usuario registrado")
+            else:
+                st.error("Usuario ya existe")
+
+    if opcion == "Login":
+        if st.button("Ingresar"):
+            if login_usuario(email, password):
+                st.session_state.usuario = email
+                st.success("Bienvenido")
+                st.rerun()
+            else:
+                st.error("Credenciales incorrectas")
+
+else:
+
+    st.sidebar.title("FisioSport AI")
+    menu = st.sidebar.radio("Menú", [
+        "Registro Paciente",
+        "Recomendación",
+        "Cálculo Ángulo",
+        "Base de Datos"
+    ])
+
+    # ==============================
+    # REGISTRO PACIENTE
+    # ==============================
+    if menu == "Registro Paciente":
+
+        st.header("Registro Paciente")
+
+        nombre = st.text_input("Nombre")
+        lesion = st.selectbox("Lesión", ["Rodilla", "Hombro"])
+        fase = st.selectbox("Fase", ["Aguda", "Subaguda"])
+
+        if st.button("Guardar"):
+            cursor.execute(
+                "INSERT INTO pacientes (nombre, lesion, fase) VALUES (?, ?, ?)",
+                (nombre, lesion, fase)
+            )
+            conn.commit()
+            st.success("Paciente registrado")
+
+    # ==============================
+    # RECOMENDACIÓN
+    # ==============================
+    if menu == "Recomendación":
+
+        st.header("Recomendación de Ejercicios")
+
+        lesion = st.selectbox("Lesión", ["Rodilla", "Hombro"])
+        fase = st.selectbox("Fase", ["Aguda", "Subaguda"])
+
+        if st.button("Generar"):
+            ejercicios = recomendar_ejercicio(lesion, fase)
+            for e in ejercicios:
+                st.success(e)
+
+    # ==============================
+    # CÁLCULO ÁNGULO
+    # ==============================
+    if menu == "Cálculo Ángulo":
+
+        st.header("Cálculo Manual de Ángulo Articular")
+
+        ax = st.number_input("Punto A - X")
+        ay = st.number_input("Punto A - Y")
+
+        bx = st.number_input("Punto B - X")
+        by = st.number_input("Punto B - Y")
+
+        cx = st.number_input("Punto C - X")
+        cy = st.number_input("Punto C - Y")
+
+        if st.button("Calcular"):
+            angulo = calcular_angulo((ax, ay), (bx, by), (cx, cy))
+            st.success(f"Ángulo calculado: {angulo}°")
+
+    # ==============================
+    # BASE DE DATOS
+    # ==============================
+    if menu == "Base de Datos":
+
+        st.header("Pacientes Registrados")
+        df = pd.read_sql_query("SELECT * FROM pacientes", conn)
+        st.dataframe(df)
+
+    if st.sidebar.button("Cerrar sesión"):
+        st.session_state.usuario = None
+        st.rerun()
