@@ -1,6 +1,14 @@
 import streamlit as st
 import sqlite3
 import hashlib
+import os
+
+# ---- BORRAR BASE (TEMPORAL) ----
+if os.path.exists("fisiosport.db"):
+    os.remove("fisiosport.db")
+# --------------------------------import streamlit as st
+import sqlite3
+import hashlib
 
 # ---------------------------
 # CONFIGURACIÓN GENERAL
