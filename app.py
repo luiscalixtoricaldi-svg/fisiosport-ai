@@ -5,16 +5,15 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import pandas as pd
-import os
 
-# =========================
-# CONFIG
-# =========================
+# ==============================
+# CONFIGURACIÓN
+# ==============================
 st.set_page_config(page_title="FisioSport AI", layout="wide")
 
-# =========================
+# ==============================
 # BASE DE DATOS
-# =========================
+# ==============================
 conn = sqlite3.connect("fisiosport.db", check_same_thread=False)
 cursor = conn.cursor()
 
@@ -37,9 +36,9 @@ CREATE TABLE IF NOT EXISTS pacientes (
 
 conn.commit()
 
-# =========================
-# FUNCIONES
-# =========================
+# ==============================
+# FUNCIONES SEGURIDAD
+# ==============================
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
@@ -57,20 +56,23 @@ def login_usuario(email, password):
                    (email, hash_password(password)))
     return cursor.fetchone()
 
+# ==============================
+# RECOMENDACIÓN EJERCICIOS
+# ==============================
 def recomendar_ejercicio(lesion, fase):
     if lesion == "Rodilla" and fase == "Aguda":
         return ["Isométricos de cuádriceps", "Elevaciones de pierna recta"]
     if lesion == "Rodilla" and fase == "Subaguda":
         return ["Sentadilla parcial", "Step-up bajo"]
     if lesion == "Hombro" and fase == "Aguda":
-        return ["Péndulo de Codman", "Isométricos de manguito"]
+        return ["Péndulo de Codman", "Isométricos manguito rotador"]
     if lesion == "Hombro" and fase == "Subaguda":
         return ["Rotaciones externas con banda", "Elevaciones frontales"]
-    return ["Ejercicios personalizados"]
+    return ["Plan personalizado"]
 
-# =========================
-# ANGULO BIOMECÁNICO
-# =========================
+# ==============================
+# CÁLCULO ÁNGULO
+# ==============================
 def calcular_angulo(a, b, c):
     a = np.array(a)
     b = np.array(b)
@@ -83,17 +85,23 @@ def calcular_angulo(a, b, c):
     angle = np.degrees(np.arccos(cos_angle))
     return round(angle, 2)
 
-# =========================
+# ==============================
+# MEDIAPIPE
+# ==============================
+mp_pose = mp.solutions.pose
+pose = mp_pose.Pose()
+
+# ==============================
 # LOGIN
-# =========================
+# ==============================
 if "usuario" not in st.session_state:
     st.session_state.usuario = None
 
 if st.session_state.usuario is None:
+
     st.title("🔐 FisioSport AI - Login")
 
     opcion = st.radio("Selecciona opción", ["Login", "Registrar"])
-
     email = st.text_input("Email")
     password = st.text_input("Password", type="password")
 
@@ -113,19 +121,21 @@ if st.session_state.usuario is None:
                 st.error("Credenciales incorrectas")
 
 else:
+
     st.sidebar.title("FisioSport AI")
     menu = st.sidebar.radio("Menú", [
         "Registro Paciente",
-        "Recomendación Ejercicios",
+        "Recomendación",
         "Evaluación Biomecánica",
-        "Base de Datos Pacientes"
+        "Base de Datos"
     ])
 
-    # =========================
+    # ==============================
     # REGISTRO PACIENTE
-    # =========================
+    # ==============================
     if menu == "Registro Paciente":
-        st.header("Registro de Paciente")
+
+        st.header("Registro Paciente")
 
         nombre = st.text_input("Nombre")
         lesion = st.selectbox("Lesión", ["Rodilla", "Hombro"])
@@ -137,45 +147,64 @@ else:
             conn.commit()
             st.success("Paciente registrado")
 
-    # =========================
-    # RECOMENDACIONES
-    # =========================
-    if menu == "Recomendación Ejercicios":
-        st.header("Recomendación Automática")
+    # ==============================
+    # RECOMENDACIÓN
+    # ==============================
+    if menu == "Recomendación":
+
+        st.header("Recomendación de Ejercicios")
 
         lesion = st.selectbox("Lesión", ["Rodilla", "Hombro"])
         fase = st.selectbox("Fase", ["Aguda", "Subaguda"])
 
         if st.button("Generar"):
             ejercicios = recomendar_ejercicio(lesion, fase)
-            st.write("Ejercicios recomendados:")
             for e in ejercicios:
                 st.success(e)
 
-    # =========================
-    # BIOMECÁNICA
-    # =========================
+    # ==============================
+    # BIOMECÁNICA CON CÁMARA WEB
+    # ==============================
     if menu == "Evaluación Biomecánica":
-        st.header("Análisis de Ángulo (Ejemplo Rodilla)")
 
-        cadera = st.number_input("Coordenada Cadera (ejemplo 100)")
-        rodilla = st.number_input("Coordenada Rodilla (ejemplo 150)")
-        tobillo = st.number_input("Coordenada Tobillo (ejemplo 200)")
+        st.header("Análisis de Rodilla con Cámara")
 
-        if st.button("Calcular Ángulo"):
-            angulo = calcular_angulo(
-                (cadera, cadera),
-                (rodilla, rodilla),
-                (tobillo, tobillo)
-            )
-            st.success(f"Ángulo estimado: {angulo}°")
+        imagen = st.camera_input("Toma una foto")
 
-    # =========================
+        if imagen is not None:
+
+            file_bytes = np.asarray(bytearray(imagen.read()), dtype=np.uint8)
+            frame = cv2.imdecode(file_bytes, 1)
+
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = pose.process(frame_rgb)
+
+            if results.pose_landmarks:
+
+                landmarks = results.pose_landmarks.landmark
+
+                cadera = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].x,
+                          landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y]
+
+                rodilla = [landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].x,
+                           landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].y]
+
+                tobillo = [landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].x,
+                           landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].y]
+
+                angulo = calcular_angulo(cadera, rodilla, tobillo)
+
+                st.success(f"Ángulo de rodilla: {angulo}°")
+
+            else:
+                st.error("No se detectó postura")
+
+    # ==============================
     # BASE DE DATOS
-    # =========================
-    if menu == "Base de Datos Pacientes":
-        st.header("Pacientes Registrados")
+    # ==============================
+    if menu == "Base de Datos":
 
+        st.header("Pacientes Registrados")
         df = pd.read_sql_query("SELECT * FROM pacientes", conn)
         st.dataframe(df)
 
