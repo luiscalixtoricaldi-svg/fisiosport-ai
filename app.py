@@ -1,8 +1,6 @@
 import streamlit as st
 import sqlite3
 import hashlib
-import cv2
-import mediapipe as mp
 import numpy as np
 import pandas as pd
 
@@ -57,23 +55,42 @@ def login_usuario(email, password):
     return cursor.fetchone()
 
 # ==============================
-# RECOMENDACIÓN EJERCICIOS
+# MOTOR RECOMENDACIÓN
 # ==============================
 def recomendar_ejercicio(lesion, fase):
-    if lesion == "Rodilla" and fase == "Aguda":
-        return ["Isométricos de cuádriceps", "Elevaciones de pierna recta"]
-    if lesion == "Rodilla" and fase == "Subaguda":
-        return ["Sentadilla parcial", "Step-up bajo"]
-    if lesion == "Hombro" and fase == "Aguda":
-        return ["Péndulo de Codman", "Isométricos manguito rotador"]
-    if lesion == "Hombro" and fase == "Subaguda":
-        return ["Rotaciones externas con banda", "Elevaciones frontales"]
-    return ["Plan personalizado"]
+
+    protocolos = {
+        "Rodilla": {
+            "Aguda": [
+                "Isométricos de cuádriceps",
+                "Elevación pierna recta",
+                "Crioterapia post ejercicio"
+            ],
+            "Subaguda": [
+                "Sentadilla parcial 0-45°",
+                "Step-up bajo",
+                "Propiocepción bipodal"
+            ]
+        },
+        "Hombro": {
+            "Aguda": [
+                "Péndulo de Codman",
+                "Isométricos manguito rotador"
+            ],
+            "Subaguda": [
+                "Rotaciones externas con banda",
+                "Elevaciones frontales 0-90°"
+            ]
+        }
+    }
+
+    return protocolos.get(lesion, {}).get(fase, ["Plan personalizado"])
 
 # ==============================
-# CÁLCULO ÁNGULO
+# CÁLCULO ÁNGULO MANUAL
 # ==============================
 def calcular_angulo(a, b, c):
+
     a = np.array(a)
     b = np.array(b)
     c = np.array(c)
@@ -83,13 +100,8 @@ def calcular_angulo(a, b, c):
 
     cos_angle = np.dot(ba, bc) / (np.linalg.norm(ba) * np.linalg.norm(bc))
     angle = np.degrees(np.arccos(cos_angle))
-    return round(angle, 2)
 
-# ==============================
-# MEDIAPIPE
-# ==============================
-mp_pose = mp.solutions.pose
-pose = mp_pose.Pose()
+    return round(angle, 2)
 
 # ==============================
 # LOGIN
@@ -99,7 +111,7 @@ if "usuario" not in st.session_state:
 
 if st.session_state.usuario is None:
 
-    st.title("🔐 FisioSport AI - Login")
+    st.title("🔐 FisioSport AI")
 
     opcion = st.radio("Selecciona opción", ["Login", "Registrar"])
     email = st.text_input("Email")
@@ -126,7 +138,7 @@ else:
     menu = st.sidebar.radio("Menú", [
         "Registro Paciente",
         "Recomendación",
-        "Evaluación Biomecánica",
+        "Cálculo Ángulo",
         "Base de Datos"
     ])
 
@@ -163,41 +175,26 @@ else:
                 st.success(e)
 
     # ==============================
-    # BIOMECÁNICA CON CÁMARA WEB
+    # CÁLCULO ÁNGULO
     # ==============================
-    if menu == "Evaluación Biomecánica":
+    if menu == "Cálculo Ángulo":
 
-        st.header("Análisis de Rodilla con Cámara")
+        st.header("Cálculo Manual de Ángulo Articular")
 
-        imagen = st.camera_input("Toma una foto")
+        st.write("Ingrese coordenadas (x, y)")
 
-        if imagen is not None:
+        ax = st.number_input("Punto A - X")
+        ay = st.number_input("Punto A - Y")
 
-            file_bytes = np.asarray(bytearray(imagen.read()), dtype=np.uint8)
-            frame = cv2.imdecode(file_bytes, 1)
+        bx = st.number_input("Punto B - X")
+        by = st.number_input("Punto B - Y")
 
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            results = pose.process(frame_rgb)
+        cx = st.number_input("Punto C - X")
+        cy = st.number_input("Punto C - Y")
 
-            if results.pose_landmarks:
-
-                landmarks = results.pose_landmarks.landmark
-
-                cadera = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].x,
-                          landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y]
-
-                rodilla = [landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].x,
-                           landmarks[mp_pose.PoseLandmark.LEFT_KNEE.value].y]
-
-                tobillo = [landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].x,
-                           landmarks[mp_pose.PoseLandmark.LEFT_ANKLE.value].y]
-
-                angulo = calcular_angulo(cadera, rodilla, tobillo)
-
-                st.success(f"Ángulo de rodilla: {angulo}°")
-
-            else:
-                st.error("No se detectó postura")
+        if st.button("Calcular"):
+            angulo = calcular_angulo((ax, ay), (bx, by), (cx, cy))
+            st.success(f"Ángulo calculado: {angulo}°")
 
     # ==============================
     # BASE DE DATOS
