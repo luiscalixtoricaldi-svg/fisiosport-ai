@@ -1,5 +1,5 @@
-streamlit==1.32.2
-numpy==1.26.4
-opencv-python-headless==4.8.1.78
+streamlit
+numpy
+pandas
+scikit-learn
 pillow
-bcrypt
